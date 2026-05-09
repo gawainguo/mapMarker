@@ -21,7 +21,7 @@ interface PopupInfo {
 export default function MapView({ marks, onUpdateMark }: MapViewProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const amapInstance = useRef<any>(null);
-  const polygonsRef = useRef<Map<string, any>>(new Map());
+  const polygonsRef = useRef<Map<string, any[]>>(new Map()); // Store multiple polygons per adcode
   const marksRef = useRef<Mark[]>(marks);
   const [popupInfo, setPopupInfo] = useState<PopupInfo | null>(null);
 
@@ -73,38 +73,59 @@ export default function MapView({ marks, onUpdateMark }: MapViewProps) {
       const currentAdcodes = new Set(marks.map(m => m.adcode));
 
       // Remove polygons that are no longer marked
-      polygonsRef.current.forEach((polygon, adcode) => {
+      polygonsRef.current.forEach((polygons, adcode) => {
         if (!currentAdcodes.has(adcode)) {
-          if (amapInstance.current) {
-            amapInstance.current.remove(polygon);
-          }
+          polygons.forEach(polygon => {
+            if (amapInstance.current) {
+              amapInstance.current.remove(polygon);
+            }
+          });
           polygonsRef.current.delete(adcode);
         }
       });
 
       if (marks.length === 0) return;
+
+      // Render polygons in order - later rendered polygons will appear on top
+      // This naturally handles nested regions: larger parent regions rendered first,
+      // smaller nested regions rendered later and appear on top
       for (const mark of marks) {
         const color = getFillColor(mark.count);
-        const existingPolygon = polygonsRef.current.get(mark.adcode);
+        const existingPolygons = polygonsRef.current.get(mark.adcode);
 
-        if (existingPolygon) {
-          existingPolygon.setOptions({
-            fillColor: color,
+        if (existingPolygons && existingPolygons.length > 0) {
+          // Update existing polygons' color
+          existingPolygons.forEach(polygon => {
+            polygon.setOptions({
+              fillColor: color,
+            });
           });
         } else {
           try {
             const boundaries = await fetchDistrictBoundary(mark.adcode);
             if (boundaries && boundaries.length > 0) {
-              const polygon = new (window as any).AMap.Polygon({
-                path: boundaries,
-                fillColor: color,
-                fillOpacity: 0.4, // Reduced from 0.7 to not cover map labels
-                strokeColor: '#fff',
-                strokeWeight: 1,
-                bubble: true,
+              const newPolygons: any[] = [];
+
+              // Create a separate Polygon for each boundary (independent region)
+              // This handles islands, exclaves, and other disjoint areas correctly
+              boundaries.forEach((boundary: any) => {
+                if (boundary && boundary.length > 0) {
+                  const polygon = new (window as any).AMap.Polygon({
+                    path: boundary,
+                    fillColor: color,
+                    fillOpacity: 0.4,
+                    strokeColor: '#fff',
+                    strokeWeight: 1,
+                    bubble: true,
+                  });
+                  amapInstance.current.add(polygon);
+                  newPolygons.push(polygon);
+                }
               });
-              amapInstance.current.add(polygon);
-              polygonsRef.current.set(mark.adcode, polygon);
+
+              if (newPolygons.length > 0) {
+                polygonsRef.current.set(mark.adcode, newPolygons);
+              }
             }
           } catch (err) {
             console.error(`Failed to draw boundary for ${mark.adcode}:`, err);
