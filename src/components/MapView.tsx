@@ -138,7 +138,8 @@ export default function MapView({ marks, onUpdateMark }: MapViewProps) {
   }, [marks]);
 
   const getFillColor = (count: number) => {
-    if (count >= 3) return '#059669'; // Dark Green (emerald-600)
+    if (count >= 4) return '#065f46'; // Darkest Green (emerald-800), for 3+
+    if (count === 3) return '#059669'; // Dark Green (emerald-600)
     if (count === 2) return '#10b981'; // Medium Green (emerald-500)
     if (count === 1) return '#6ee7b7'; // Light Green (emerald-300)
     return 'transparent';
